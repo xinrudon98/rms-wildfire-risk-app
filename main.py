@@ -30,7 +30,7 @@ class LookupRequest(BaseModel):
     sqft: Optional[int] = 0
     building_value: Optional[float] = 0
     contents_value: Optional[float] = 0
-
+    business_interruption_value: Optional[float] = 0
 
 # =========================
 # Address Parser
@@ -317,6 +317,7 @@ Property Information
 <input id="sqft" type="number" placeholder="Square Footage"/>
 <input id="building_value" type="number" placeholder="Building Value"/>
 <input id="contents_value" type="number" placeholder="Contents Value"/>
+<input id="business_interruption_value" type="number" placeholder="Business Interruption Value"/>
 </div>
 
 <button onclick="lookup()">Run Risk Analysis</button>
@@ -379,7 +380,8 @@ year_built:parseInt(document.getElementById("year_built").value)||0,
 num_stories:parseInt(document.getElementById("num_stories").value)||0,
 sqft:parseInt(document.getElementById("sqft").value)||0,
 building_value:parseFloat(document.getElementById("building_value").value)||0,
-contents_value:parseFloat(document.getElementById("contents_value").value)||0
+contents_value:parseFloat(document.getElementById("contents_value").value)||0,
+business_interruption_value:parseFloat(document.getElementById("business_interruption_value").value)||0
 })
 });
 
@@ -398,6 +400,7 @@ return;
 
 const buildingValue=parseFloat(document.getElementById("building_value").value)||0;
 const contentsValue=parseFloat(document.getElementById("contents_value").value)||0;
+const biValue = parseFloat(document.getElementById("business_interruption_value").value) || 0;
 
 const overall=data.wildfire_risk.overall_score;
 const mapsLink=`https://www.google.com/maps?q=${data.location.latitude},${data.location.longitude}`;
@@ -433,17 +436,39 @@ riskHTML+=`
 
 let annualBuildingLossDisplay="";
 let annualContentsLossDisplay="";
+let annualBusinessInterruptionLossDisplay = "";
 
-if(buildingValue>0){
-annualBuildingLossDisplay=formatCurrency(data.loss_metrics.building_annual_loss_rate*buildingValue);
+/* Building */
+if(buildingValue > 0){
+    annualBuildingLossDisplay =
+        formatCurrency(
+            data.loss_metrics.building_annual_loss_rate * buildingValue
+        );
 }else{
-annualBuildingLossDisplay="<span class='placeholder'>Input building value</span>";
+    annualBuildingLossDisplay =
+        "<span class='placeholder'>Input building value</span>";
 }
 
-if(contentsValue>0){
-annualContentsLossDisplay=formatCurrency(data.loss_metrics.contents_annual_loss_rate*contentsValue);
+/* Contents */
+if(contentsValue > 0){
+    annualContentsLossDisplay =
+        formatCurrency(
+            data.loss_metrics.contents_annual_loss_rate * contentsValue
+        );
 }else{
-annualContentsLossDisplay="<span class='placeholder'>Input contents value</span>";
+    annualContentsLossDisplay =
+        "<span class='placeholder'>Input contents value</span>";
+}
+
+/* Business Interruption */
+if(biValue > 0){
+    annualBusinessInterruptionLossDisplay =
+        formatCurrency(
+            data.loss_metrics.business_interruption_annual_loss_rate * biValue
+        );
+}else{
+    annualBusinessInterruptionLossDisplay =
+        "<span class='placeholder'>Input business interruption value</span>";
 }
 
 resultsDiv.innerHTML=`
@@ -502,11 +527,20 @@ Annualized Loss
 <div class="metric">${annualContentsLossDisplay}</div>
 </div>
 
+<div class="loss-card">
+<div class="metric">Business Interruption Annualized Loss Rate</div>
+<div class="metric">${formatPercent(data.loss_metrics.business_interruption_annual_loss_rate)}</div>
+<div class="metric">Estimated Annual Business Interruption Loss</div>
+<div class="metric">${annualBusinessInterruptionLossDisplay}</div>
+</div>
+
 </div>
 
 <div style="margin-top:30px;">
-<div class="metric">Ground Up Loss</div>
-<div class="metric-strong">${formatCurrency(data.loss_metrics.ground_up_loss)}</div>
+<div class="metric">Average Annual Loss</div>
+<div class="metric-strong">
+${formatCurrency(data.loss_metrics.ground_up_loss)}
+</div>
 </div>
 
 </div>
@@ -562,7 +596,8 @@ def lookup(req: LookupRequest):
             },
             "coverageValues": {
                 "buildingValue": req.building_value or 0,
-                "contentsValue": req.contents_value or 0
+                "contentsValue": req.contents_value or 0,
+                "businessInterruptionValue": req.business_interruption_value or 0
             }
         },
         "layers": [
@@ -609,6 +644,7 @@ def lookup(req: LookupRequest):
         "loss_metrics": {
             "building_annual_loss_rate": loss_res.get("buildingAlr"),
             "contents_annual_loss_rate": loss_res.get("contentsAlr"),
+            "business_interruption_annual_loss_rate": loss_res.get("businessInterruptionAlr"),
             "ground_up_loss": loss_res.get("groundUpLoss")
         }
     }
