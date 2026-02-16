@@ -6,6 +6,9 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 import psycopg2
 from datetime import datetime
+import pandas as pd
+from fastapi.responses import StreamingResponse
+import io
 
 # =========================
 # Environment Variables
@@ -93,6 +96,24 @@ font-size:26px;
 height:1px;
 background:rgba(255,255,255,0.15);
 margin-top:25px;
+}
+
+.download-btn{
+background:transparent;
+border:1px solid rgba(255,255,255,0.3);
+color:rgba(255,255,255,0.85);
+padding:8px 14px;
+border-radius:6px;
+font-size:12px;
+letter-spacing:0.6px;
+cursor:pointer;
+transition:all 0.2s ease;
+}
+
+.download-btn:hover{
+background:rgba(255,255,255,0.08);
+border-color:rgba(255,255,255,0.6);
+color:white;
 }
 
 /* WRAPPER */
@@ -300,8 +321,13 @@ text-decoration:underline;
 <body>
 
 <div class="hero">
-<h1>RMS WILDFIRE RISK LOOKUP</h1>
-<div class="hero-divider"></div>
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+        <h1>RMS WILDFIRE RISK LOOKUP</h1>
+        <button onclick="downloadHistory()" class="download-btn">
+            Download History
+        </button>
+    </div>
+    <div class="hero-divider"></div>
 </div>
 
 <div class="container">
@@ -398,6 +424,10 @@ resultsDiv.innerHTML=`
 </div>
 `;
 return;
+}
+
+function downloadHistory() {
+    window.open("/download-history", "_blank");
 }
 
 const buildingValue=parseFloat(document.getElementById("building_value").value)||0;
@@ -650,6 +680,37 @@ def lookup(req: LookupRequest):
             "ground_up_loss": loss_res.get("groundUpLoss")
         }
     }
+
+    @app.get("/download-history")
+    def download_history():
+        try:
+            db_url = os.getenv("DATABASE_URL")
+            if not db_url:
+                return {"error": "DATABASE_URL not set"}
+
+            conn = psycopg2.connect(db_url)
+
+            query = "SELECT * FROM RiskQueries ORDER BY Timestamp DESC;"
+            df = pd.read_sql_query(query, conn)
+
+            conn.close()
+
+            output = io.BytesIO()
+            with pd.ExcelWriter(output, engine="openpyxl") as writer:
+                df.to_excel(writer, index=False, sheet_name="RiskHistory")
+
+            output.seek(0)
+
+            return StreamingResponse(
+                output,
+                media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                headers={
+                    "Content-Disposition": "attachment; filename=RiskHistory.xlsx"
+                },
+            )
+
+        except Exception as e:
+            return {"error": str(e)}
 
     # =========================
     # Save Query to Database
