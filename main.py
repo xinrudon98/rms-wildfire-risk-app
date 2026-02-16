@@ -725,7 +725,7 @@ def lookup(req: LookupRequest):
                 Year250ExpectedLoss,
                 Year500ExpectedLoss
             )
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
         """, (
             datetime.now(),
             street,
