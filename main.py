@@ -21,37 +21,45 @@ if not RMS_API_KEY or not RMS_HOST:
 # =========================
 app = FastAPI(title="RMS Composite Lookup")
 def init_db():
-    conn = psycopg2.connect(os.getenv("DATABASE_URL"))
-    cur = conn.cursor()
+    db_url = os.getenv("DATABASE_URL")
+    if not db_url:
+        print("DATABASE_URL not set")
+        return
 
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS risk_queries (
-            id SERIAL PRIMARY KEY,
-            timestamp TIMESTAMP,
-            address TEXT,
-            city TEXT,
-            state TEXT,
-            county TEXT,
-            overall_score INT,
-            score_100 INT,
-            score_250 INT,
-            score_500 INT,
-            building_value FLOAT,
-            contents_value FLOAT,
-            business_interruption_value FLOAT,
-            expected_loss FLOAT,
-            annual_building_loss FLOAT,
-            annual_contents_loss FLOAT,
-            annual_bi_loss FLOAT,
-            average_annual_loss FLOAT
-        );
-    """)
+    try:
+        conn = psycopg2.connect(db_url)
+        cur = conn.cursor()
 
-    conn.commit()
-    cur.close()
-    conn.close()
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS risk_queries (
+                id SERIAL PRIMARY KEY,
+                timestamp TIMESTAMP,
+                address TEXT,
+                city TEXT,
+                state TEXT,
+                county TEXT,
+                overall_score INT,
+                score_100 INT,
+                score_250 INT,
+                score_500 INT,
+                building_value FLOAT,
+                contents_value FLOAT,
+                business_interruption_value FLOAT,
+                expected_loss FLOAT,
+                annual_building_loss FLOAT,
+                annual_contents_loss FLOAT,
+                annual_bi_loss FLOAT,
+                average_annual_loss FLOAT
+            );
+        """)
 
-init_db()
+        conn.commit()
+        cur.close()
+        conn.close()
+        print("Database initialized successfully")
+
+    except Exception as e:
+        print("Database init error:", e)
 
 # =========================
 # Request Model
@@ -82,7 +90,6 @@ def parse_address(address_str: str):
             status_code=400,
             detail="Address format must be: Street, City, State ZIP"
         )
-
 
 # =========================
 # Frontend UI
