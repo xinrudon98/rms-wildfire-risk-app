@@ -21,45 +21,7 @@ if not RMS_API_KEY or not RMS_HOST:
 # =========================
 app = FastAPI(title="RMS Composite Lookup")
 def init_db():
-    db_url = os.getenv("DATABASE_URL")
-    if not db_url:
-        print("DATABASE_URL not set")
-        return
-
-    try:
-        conn = psycopg2.connect(db_url)
-        cur = conn.cursor()
-
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS risk_queries (
-                id SERIAL PRIMARY KEY,
-                timestamp TIMESTAMP,
-                address TEXT,
-                city TEXT,
-                state TEXT,
-                county TEXT,
-                overall_score INT,
-                score_100 INT,
-                score_250 INT,
-                score_500 INT,
-                building_value FLOAT,
-                contents_value FLOAT,
-                business_interruption_value FLOAT,
-                expected_loss FLOAT,
-                annual_building_loss FLOAT,
-                annual_contents_loss FLOAT,
-                annual_bi_loss FLOAT,
-                average_annual_loss FLOAT
-            );
-        """)
-
-        conn.commit()
-        cur.close()
-        conn.close()
-        print("Database initialized successfully")
-
-    except Exception as e:
-        print("Database init error:", e)
+    print("Using existing Supabase table")
 
 # =========================
 # Request Model
@@ -717,11 +679,16 @@ def lookup(req: LookupRequest):
         ratio_map = {
             1:(0,0.5),2:(0.5,1),3:(1,5),4:(5,10),
             5:(10,15),6:(15,20),7:(20,30),
-            8:(30,40),9:(40,50),10:(50,80)
+            8:(30,40),9:(40,50),10:(50,75)
         }
 
-        upper_ratio = ratio_map.get(score_100, (0,0))[1] / 100
-        expected_loss = building_value * upper_ratio
+        def calc_expected(score):
+            upper = ratio_map.get(score, (0,0))[1] / 100
+            return building_value * upper
+
+        expected_100 = calc_expected(score_100)
+        expected_250 = calc_expected(score_250)
+        expected_500 = calc_expected(score_500)
 
         building_alr = loss_res.get("buildingAlr") or 0
         contents_alr = loss_res.get("contentsAlr") or 0
@@ -734,44 +701,48 @@ def lookup(req: LookupRequest):
         average_annual_loss = loss_res.get("groundUpLoss") or 0
 
         cur.execute("""
-            INSERT INTO risk_queries (
-                timestamp,
-                address,
-                city,
-                state,
-                county,
-                overall_score,
-                score_100,
-                score_250,
-                score_500,
-                building_value,
-                contents_value,
-                business_interruption_value,
-                expected_loss,
-                annual_building_loss,
-                annual_contents_loss,
-                annual_bi_loss,
-                average_annual_loss
+            INSERT INTO RiskQueries (
+                Timestamp,
+                Street,
+                City,
+                County,
+                State,
+                BuildingValue,
+                ContentsValue,
+                BusinessInterruptionValue,
+                BuildingAAL,
+                ContentsAAL,
+                BusinessInterruptionAAL,
+                TotalAAL,
+                OverallScore,
+                Year100Score,
+                Year250Score,
+                Year500Score,
+                Year100ExpectedLoss,
+                Year250ExpectedLoss,
+                Year500ExpectedLoss
             )
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
         """, (
             datetime.now(),
-            req.address,
+            street,
             city,
-            state,
             county,
+            state,
+            building_value,
+            contents_value,
+            bi_value,
+            annual_building_loss,
+            annual_contents_loss,
+            annual_bi_loss,
+            average_annual_loss,
             overall_score,
             score_100,
             score_250,
             score_500,
-            building_value,
-            contents_value,
-            bi_value,
-            expected_loss,
-            annual_building_loss,
-            annual_contents_loss,
-            annual_bi_loss,
-            average_annual_loss
+            expected_100,
+            expected_250,
+            expected_500
         ))
 
         conn.commit()
