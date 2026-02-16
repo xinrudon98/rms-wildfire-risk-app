@@ -226,17 +226,58 @@ gap:20px;
 margin-top:25px;
 }
 
-.risk-card{
+.data-card{
 background:white;
-padding:22px;
+padding:24px;
 border-radius:12px;
 border-left:4px solid #8497B0;
+display:flex;
+flex-direction:column;
+gap:8px;
 transition:all 0.2s ease;
 }
 
-.risk-card:hover{
+.data-card:hover{
 transform:translateY(-2px);
 box-shadow:0 8px 20px rgba(0,0,0,0.05);
+}
+
+.summary-section{
+margin-top:32px;
+border-top:1px solid #E5E5E5;
+padding-top:22px;
+}
+
+.summary-title{
+font-size:13px;
+text-transform:uppercase;
+letter-spacing:1px;
+color:#595959;
+}
+
+.summary-value{
+font-size:26px;
+font-weight:700;
+color:#404040;
+margin-top:8px;
+}
+
+.card-title{
+font-size:12px;
+text-transform:uppercase;
+letter-spacing:1px;
+color:#595959;
+}
+
+.card-value{
+font-size:18px;
+font-weight:600;
+color:#404040;
+}
+
+.card-sub{
+font-size:13px;
+color:#777;
 }
 
 .risk-title{
@@ -267,15 +308,15 @@ margin-top:20px;
 
 .loss-grid{
 display:grid;
-grid-template-columns:1fr 1fr;
-gap:30px;
+grid-template-columns:repeat(auto-fit, minmax(260px, 1fr));
+gap:20px;
 }
 
 .loss-card{
 background:white;
 padding:22px;
 border-radius:12px;
-border-top:4px solid #EEE1B3;
+border-left:4px solid #EEE1B3;
 display:flex;
 flex-direction:column;
 justify-content:space-between;
@@ -426,10 +467,6 @@ resultsDiv.innerHTML=`
 return;
 }
 
-function downloadHistory() {
-    window.open("/download-history", "_blank");
-}
-
 const buildingValue=parseFloat(document.getElementById("building_value").value)||0;
 const contentsValue=parseFloat(document.getElementById("contents_value").value)||0;
 const biValue = parseFloat(document.getElementById("business_interruption_value").value) || 0;
@@ -456,12 +493,11 @@ expectedLossDisplay="<span class='placeholder'>Input building value</span>";
 }
 
 riskHTML+=`
-<div class="risk-card">
-<div class="risk-title">${r.label}</div>
-<div class="metric">Risk Score: ${r.score}</div>
-<div class="metric">Estimated Damage Ratio: ${ratio[0]}% – ${ratio[1]}%</div>
-<div class="metric">Expected Loss</div>
-<div class="metric-strong">${expectedLossDisplay}</div>
+<div class="data-card">
+<div class="card-title">100 Year</div>
+<div class="card-sub">Risk Score: ${r.score}</div>
+<div class="card-sub">Damage Ratio: ${ratio[0]}% – ${ratio[1]}%</div>
+<div class="card-value">${expectedLossDisplay}</div>
 </div>
 `;
 });
@@ -543,39 +579,33 @@ Annualized Loss
 </div>
 
 <div class="loss-section">
-<div class="loss-grid">
+<div class="risk-grid">
 
-<div class="loss-card">
-<div class="metric">Building Annualized Loss Rate</div>
-<div class="metric">${formatPercent(data.loss_metrics.building_annual_loss_rate)}</div>
-<div class="metric">Estimated Annual Building Loss</div>
-<div class="metric">${annualBuildingLossDisplay}</div>
+<div class="data-card">
+<div class="card-title">Building AAL</div>
+<div class="card-value">${annualBuildingLossDisplay}</div>
+<div class="card-sub">ALR: ${formatPercent(data.loss_metrics.building_annual_loss_rate)}</div>
 </div>
 
-<div class="loss-card">
-<div class="metric">Contents Annualized Loss Rate</div>
-<div class="metric">${formatPercent(data.loss_metrics.contents_annual_loss_rate)}</div>
-<div class="metric">Estimated Annual Contents Loss</div>
-<div class="metric">${annualContentsLossDisplay}</div>
+<div class="data-card">
+<div class="card-title">Contents AAL</div>
+<div class="card-value">${annualContentsLossDisplay}</div>
+<div class="card-sub">ALR: ${formatPercent(data.loss_metrics.contents_annual_loss_rate)}</div>
 </div>
 
-<div class="loss-card">
-<div class="metric">Business Interruption Annualized Loss Rate</div>
-<div class="metric">${formatPercent(data.loss_metrics.business_interruption_annual_loss_rate)}</div>
-<div class="metric">Estimated Annual Business Interruption Loss</div>
-<div class="metric">${annualBusinessInterruptionLossDisplay}</div>
+<div class="data-card">
+<div class="card-title">BI AAL</div>
+<div class="card-value">${annualBusinessInterruptionLossDisplay}</div>
+<div class="card-sub">ALR: ${formatPercent(data.loss_metrics.business_interruption_annual_loss_rate)}</div>
 </div>
 
 </div>
 
-<div style="margin-top:30px;">
-<div class="metric">Average Annual Loss</div>
-<div class="metric-strong">
-${formatCurrency(data.loss_metrics.ground_up_loss)}
-</div>
-</div>
-
-</div>
+<div class="summary-section">
+    <div class="summary-title">Average Annual Loss</div>
+    <div class="summary-value">
+        ${formatCurrency(data.loss_metrics.ground_up_loss)}
+    </div>
 </div>
 `;
 
@@ -585,6 +615,11 @@ lucide.createIcons();
 resultsDiv.innerHTML="<div class='card'>Request failed.</div>";
 }
 }
+
+function downloadHistory() {
+    window.open("/download-history", "_blank");
+}
+
 </script>
 
 </body>
