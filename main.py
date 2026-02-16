@@ -343,7 +343,7 @@ const map={
 7:[20,30],
 8:[30,40],
 9:[40,50],
-10:[50,80]
+10:[50,75]
 };
 return map[score]||[0,0];
 }
@@ -668,9 +668,11 @@ def lookup(req: LookupRequest):
         score_250 = risk_res.get("score250yr")
         score_500 = risk_res.get("score500yr")
 
+        street = geo_res.get("streetAddress")
         city = geo_res.get("cityName")
         state = geo_res.get("admin1Code")
         county = geo_res.get("admin2Name")
+        zip_code = geo_res.get("postalCode")
 
         building_value = req.building_value or 0
         contents_value = req.contents_value or 0
@@ -707,6 +709,7 @@ def lookup(req: LookupRequest):
                 City,
                 County,
                 State,
+                ZipCode,
                 BuildingValue,
                 ContentsValue,
                 BusinessInterruptionValue,
@@ -729,6 +732,7 @@ def lookup(req: LookupRequest):
             city,
             county,
             state,
+            zip_code,
             building_value,
             contents_value,
             bi_value,
