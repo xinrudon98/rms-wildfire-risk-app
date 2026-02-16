@@ -4,6 +4,8 @@ from typing import Optional
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
+import psycopg2
+from datetime import datetime
 
 # =========================
 # Environment Variables
@@ -18,7 +20,38 @@ if not RMS_API_KEY or not RMS_HOST:
 # FastAPI App
 # =========================
 app = FastAPI(title="RMS Composite Lookup")
+def init_db():
+    conn = psycopg2.connect(os.getenv("DATABASE_URL"))
+    cur = conn.cursor()
 
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS risk_queries (
+            id SERIAL PRIMARY KEY,
+            timestamp TIMESTAMP,
+            address TEXT,
+            city TEXT,
+            state TEXT,
+            county TEXT,
+            overall_score INT,
+            score_100 INT,
+            score_250 INT,
+            score_500 INT,
+            building_value FLOAT,
+            contents_value FLOAT,
+            business_interruption_value FLOAT,
+            expected_loss FLOAT,
+            annual_building_loss FLOAT,
+            annual_contents_loss FLOAT,
+            annual_bi_loss FLOAT,
+            average_annual_loss FLOAT
+        );
+    """)
+
+    conn.commit()
+    cur.close()
+    conn.close()
+
+init_db()
 
 # =========================
 # Request Model
@@ -648,5 +681,97 @@ def lookup(req: LookupRequest):
             "ground_up_loss": loss_res.get("groundUpLoss")
         }
     }
+
+    # =========================
+    # Save Query to Database
+    # =========================
+    try:
+        db_url = os.getenv("DATABASE_URL")
+        if not db_url:
+            print("DATABASE_URL not set")
+            return result
+
+        conn = psycopg2.connect(db_url)
+        cur = conn.cursor()
+
+        overall_score = risk_res.get("scoreOverall")
+        score_100 = risk_res.get("score100yr")
+        score_250 = risk_res.get("score250yr")
+        score_500 = risk_res.get("score500yr")
+
+        city = geo_res.get("cityName")
+        state = geo_res.get("admin1Code")
+        county = geo_res.get("admin2Name")
+
+        building_value = req.building_value or 0
+        contents_value = req.contents_value or 0
+        bi_value = req.business_interruption_value or 0
+
+        ratio_map = {
+            1:(0,0.5),2:(0.5,1),3:(1,5),4:(5,10),
+            5:(10,15),6:(15,20),7:(20,30),
+            8:(30,40),9:(40,50),10:(50,80)
+        }
+
+        upper_ratio = ratio_map.get(score_100, (0,0))[1] / 100
+        expected_loss = building_value * upper_ratio
+
+        building_alr = loss_res.get("buildingAlr") or 0
+        contents_alr = loss_res.get("contentsAlr") or 0
+        bi_alr = loss_res.get("businessInterruptionAlr") or 0
+
+        annual_building_loss = building_alr * building_value
+        annual_contents_loss = contents_alr * contents_value
+        annual_bi_loss = bi_alr * bi_value
+
+        average_annual_loss = loss_res.get("groundUpLoss") or 0
+
+        cur.execute("""
+            INSERT INTO risk_queries (
+                timestamp,
+                address,
+                city,
+                state,
+                county,
+                overall_score,
+                score_100,
+                score_250,
+                score_500,
+                building_value,
+                contents_value,
+                business_interruption_value,
+                expected_loss,
+                annual_building_loss,
+                annual_contents_loss,
+                annual_bi_loss,
+                average_annual_loss
+            )
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+        """, (
+            datetime.now(),
+            req.address,
+            city,
+            state,
+            county,
+            overall_score,
+            score_100,
+            score_250,
+            score_500,
+            building_value,
+            contents_value,
+            bi_value,
+            expected_loss,
+            annual_building_loss,
+            annual_contents_loss,
+            annual_bi_loss,
+            average_annual_loss
+        ))
+
+        conn.commit()
+        cur.close()
+        conn.close()
+
+    except Exception as e:
+        print("Database write error:", e)
 
     return result
