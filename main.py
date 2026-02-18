@@ -817,8 +817,14 @@ def lookup(req: LookupRequest):
     geocode_layer = next((x for x in geo_data if x["name"] == "geocode"), {})
     geo_res = geocode_layer.get("results", {})
 
-    lat = round(float(geo_res.get("latitude")), 6)
-    lon = round(float(geo_res.get("longitude")), 6)
+    lat = geo_res.get("latitude")
+    lon = geo_res.get("longitude")
+
+    if lat is None or lon is None:
+        raise HTTPException(status_code=400, detail="Geocoding failed")
+
+    lat = round(float(lat), 6)
+    lon = round(float(lon), 6)
 
     cached = get_location_cache(lat, lon)
 
@@ -917,7 +923,8 @@ def lookup(req: LookupRequest):
     if cached:
         location_id = cached.LocationRiskId
     else:
-        location_id = get_location_cache(lat, lon).LocationRiskId
+        cached = get_location_cache(lat, lon)
+        location_id = cached.LocationRiskId
 
     if not query_history_exists(location_id, req):
         insert_query_history(
