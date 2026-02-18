@@ -2,6 +2,7 @@ fastapi
 uvicorn[standard]
 requests
 pydantic
-psycopg2-binary
 pandas
 openpyxl
+pyodbc
+python-dotenv

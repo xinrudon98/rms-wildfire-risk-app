@@ -1,160 +1,14 @@
 import os
-import json
 import requests
 from typing import Optional
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
-import pandas as pd
-import io
-import pyodbc
-from dotenv import load_dotenv
-load_dotenv()
+import psycopg2
 from datetime import datetime
-
-MSSQL_SERVER = os.getenv("MSSQL_SERVER")
-MSSQL_DATABASE = os.getenv("MSSQL_DATABASE")
-
-def get_mssql_conn():
-    conn_str = (
-        f"DRIVER={{ODBC Driver 17 for SQL Server}};"
-        f"SERVER={MSSQL_SERVER};"
-        f"DATABASE={MSSQL_DATABASE};"
-        "Trusted_Connection=yes;"
-    )
-    return pyodbc.connect(conn_str)
-
-def get_location_cache(lat, lon):
-    conn = get_mssql_conn()
-    cursor = conn.cursor()
-
-    cursor.execute("""
-        SELECT TOP 1
-            LocationRiskId,
-            Latitude, Longitude,
-            Street, City, County, State, ZipCode,
-            OverallScore, Score100yr, Score250yr, Score500yr,
-            BuildingALR, ContentsALR, BusinessInterruptionALR,
-            GroundUpLoss
-        FROM dbo.Moodys_Location_Risk
-        WHERE Latitude = ? AND Longitude = ?
-    """, (lat, lon))
-
-    row = cursor.fetchone()
-    conn.close()
-    return row
-
-def insert_location_cache(lat, lon, geo_res, risk_res, loss_res, raw_json):
-    conn = get_mssql_conn()
-    cursor = conn.cursor()
-
-    cursor.execute("""
-        INSERT INTO dbo.Moodys_Location_Risk (
-            Latitude, Longitude,
-            Street, City, County, State, ZipCode,
-            OverallScore, Score100yr, Score250yr, Score500yr,
-            BuildingALR, ContentsALR, BusinessInterruptionALR,
-            GroundUpLoss,
-            RawResponseJson
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, (
-        lat, lon,
-        geo_res.get("streetAddress"),
-        geo_res.get("cityName"),
-        geo_res.get("admin2Name"),
-        geo_res.get("admin1Code"),
-        geo_res.get("postalCode"),
-        risk_res.get("scoreOverall"),
-        risk_res.get("score100yr"),
-        risk_res.get("score250yr"),
-        risk_res.get("score500yr"),
-        loss_res.get("buildingAlr"),
-        loss_res.get("contentsAlr"),
-        loss_res.get("businessInterruptionAlr"),
-        loss_res.get("groundUpLoss"),
-        raw_json
-    ))
-
-    conn.commit()
-    conn.close()
-
-def query_history_exists(location_id, req):
-    conn = get_mssql_conn()
-    cursor = conn.cursor()
-
-    cursor.execute("""
-        SELECT TOP 1 1
-        FROM dbo.Moodys_Query_History
-        WHERE LocationRiskId = ?
-          AND BuildingValue = ?
-          AND ContentsValue = ?
-          AND BusinessInterruptionValue = ?
-          AND YearBuilt = ?
-          AND NumStories = ?
-          AND Sqft = ?
-    """, (
-        location_id,
-        float(req.building_value or 0),
-        float(req.contents_value or 0),
-        float(req.business_interruption_value or 0),
-        req.year_built or 0,
-        req.num_stories or 0,
-        req.sqft or 0
-    ))
-
-    exists = cursor.fetchone()
-    conn.close()
-    return exists is not None
-
-def insert_query_history(location_id, req, building_alr, contents_alr, bi_alr):
-    conn = get_mssql_conn()
-    cursor = conn.cursor()
-
-    building_value = float(req.building_value or 0)
-    contents_value = float(req.contents_value or 0)
-    bi_value = float(req.business_interruption_value or 0)
-
-    building_alr = float(building_alr or 0)
-    contents_alr = float(contents_alr or 0)
-    bi_alr = float(bi_alr or 0)
-
-    building_aal = building_alr * building_value
-    contents_aal = contents_alr * contents_value
-    bi_aal = bi_alr * bi_value
-    total_aal = building_aal + contents_aal + bi_aal
-
-    cursor.execute("""
-        INSERT INTO dbo.Moodys_Query_History (
-            LocationRiskId,
-            BuildingValue,
-            ContentsValue,
-            BusinessInterruptionValue,
-            YearBuilt,
-            NumStories,
-            Sqft,
-            BuildingAAL,
-            ContentsAAL,
-            BusinessInterruptionAAL,
-            TotalAAL
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, (
-        location_id,
-        building_value,
-        contents_value,
-        bi_value,
-        req.year_built or 0,
-        req.num_stories or 0,
-        req.sqft or 0,
-        building_aal,
-        contents_aal,
-        bi_aal,
-        total_aal
-    ))
-
-    conn.commit()
-    conn.close()
+import pandas as pd
+from fastapi.responses import StreamingResponse
+import io
 
 # =========================
 # Environment Variables
@@ -787,7 +641,7 @@ def lookup(req: LookupRequest):
         "authorization": RMS_API_KEY
     }
 
-    geocode_payload = {
+    payload = {
         "location": {
             "address": {
                 "streetAddress": street,
@@ -798,138 +652,45 @@ def lookup(req: LookupRequest):
                 "countryRmsCode": "US",
                 "countryScheme": "ISO2A",
                 "rmsGeoModelResolutionCode": "2"
+            },
+            "characteristics": {
+                "construction": "ATC1",
+                "occupancy": "ATC1",
+                "yearBuilt": req.year_built or 0,
+                "numOfStories": req.num_stories or 0,
+                "foundationType": 0,
+                "floorArea": req.sqft or 0
+            },
+            "coverageValues": {
+                "buildingValue": req.building_value or 0,
+                "contentsValue": req.contents_value or 0,
+                "businessInterruptionValue": req.business_interruption_value or 0
             }
         },
         "layers": [
-            {"name": "geocode", "version": "latest"}
+            {"name": "geocode", "version": "latest"},
+            {"name": "us_wf_risk_score", "version": "2.0"},
+            {"name": "us_wf_loss_cost", "version": "latest"}
         ]
     }
 
-    geo_resp = requests.post(url, json=geocode_payload, headers=headers)
+    response = requests.post(url, json=payload, headers=headers)
 
-    if geo_resp.status_code >= 400:
+    if response.status_code >= 400:
         raise HTTPException(
-            status_code=geo_resp.status_code,
-            detail=geo_resp.text
+            status_code=response.status_code,
+            detail=response.text
         )
 
-    geo_data = geo_resp.json()
-    geocode_layer = next((x for x in geo_data if x["name"] == "geocode"), {})
-    geo_res = geocode_layer.get("results", {})
+    data = response.json()
 
-    lat = round(float(geo_res.get("latitude")), 6)
-    lon = round(float(geo_res.get("longitude")), 6)
+    geocode = next((x for x in data if x["name"] == "geocode"), {})
+    risk = next((x for x in data if x["name"] == "us_wf_risk_score"), {})
+    loss = next((x for x in data if x["name"] == "us_wf_loss_cost"), {})
 
-    cached = get_location_cache(lat, lon)
-
-    if cached:
-        print("CACHE HIT")
-
-        geo_res = {
-            "streetAddress": cached.Street,
-            "cityName": cached.City,
-            "admin2Name": cached.County,
-            "admin1Code": cached.State,
-            "postalCode": cached.ZipCode,
-            "latitude": cached.Latitude,
-            "longitude": cached.Longitude
-        }
-
-        risk_res = {
-            "scoreOverall": cached.OverallScore,
-            "score100yr": cached.Score100yr,
-            "score250yr": cached.Score250yr,
-            "score500yr": cached.Score500yr
-        }
-
-        loss_res = {
-            "buildingAlr": cached.BuildingALR,
-            "contentsAlr": cached.ContentsALR,
-            "businessInterruptionAlr": cached.BusinessInterruptionALR,
-            "groundUpLoss": cached.GroundUpLoss
-        }
-
-    else:
-        print("CACHE MISS")
-
-        payload = {
-            "location": {
-                "address": {
-                    "streetAddress": street,
-                    "cityName": city,
-                    "admin1Code": state,
-                    "postalCode": zip_code,
-                    "countryCode": "US",
-                    "countryRmsCode": "US",
-                    "countryScheme": "ISO2A",
-                    "rmsGeoModelResolutionCode": "2"
-                },
-                "characteristics": {
-                    "construction": "ATC1",
-                    "occupancy": "ATC1",
-                    "yearBuilt": req.year_built or 0,
-                    "numOfStories": req.num_stories or 0,
-                    "foundationType": 0,
-                    "floorArea": req.sqft or 0
-                },
-                "coverageValues": {
-                    "buildingValue": req.building_value or 0,
-                    "contentsValue": req.contents_value or 0,
-                    "businessInterruptionValue": req.business_interruption_value or 0
-                }
-            },
-            "layers": [
-                {"name": "geocode", "version": "latest"},
-                {"name": "us_wf_risk_score", "version": "2.0"},
-                {"name": "us_wf_loss_cost", "version": "latest"}
-            ]
-        }
-
-        response = requests.post(url, json=payload, headers=headers)
-
-        if response.status_code >= 400:
-            raise HTTPException(
-                status_code=response.status_code,
-                detail=response.text
-            )
-
-        data = response.json()
-
-        geocode_layer = next((x for x in data if x["name"] == "geocode"), {})
-        risk_layer = next((x for x in data if x["name"] == "us_wf_risk_score"), {})
-        loss_layer = next((x for x in data if x["name"] == "us_wf_loss_cost"), {})
-
-        geo_res = geocode_layer.get("results", {})
-        risk_res = risk_layer.get("results", {})
-        loss_res = loss_layer.get("results", {})
-
-        insert_location_cache(
-            lat,
-            lon,
-            geo_res,
-            risk_res,
-            loss_res,
-            json.dumps(data)
-        )
-
-        print("INSERTED INTO CACHE")
-
-    if cached:
-        location_id = cached.LocationRiskId
-    else:
-        location_id = get_location_cache(lat, lon).LocationRiskId
-
-    if not query_history_exists(location_id, req):
-        insert_query_history(
-            location_id,
-            req,
-            loss_res.get("buildingAlr"),
-            loss_res.get("contentsAlr"),
-            loss_res.get("businessInterruptionAlr")
-        )
-        print("QUERY HISTORY INSERTED")
-    else:
-        print("DUPLICATE QUERY - NOT INSERTED")
+    geo_res = geocode.get("results", {})
+    risk_res = risk.get("results", {})
+    loss_res = loss.get("results", {})
 
     result = {
         "location": {
@@ -955,64 +716,140 @@ def lookup(req: LookupRequest):
         }
     }
 
-    return result
+    @app.get("/download-history")
+    def download_history():
+        try:
+            db_url = os.getenv("DATABASE_URL")
+            if not db_url:
+                return {"error": "DATABASE_URL not set"}
 
-@app.get("/download-history")
-def download_history():
+            conn = psycopg2.connect(db_url)
+
+            query = "SELECT * FROM RiskQueries ORDER BY Timestamp DESC;"
+            df = pd.read_sql_query(query, conn)
+
+            conn.close()
+
+            output = io.BytesIO()
+            with pd.ExcelWriter(output, engine="openpyxl") as writer:
+                df.to_excel(writer, index=False, sheet_name="RiskHistory")
+
+            output.seek(0)
+
+            return StreamingResponse(
+                output,
+                media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                headers={
+                    "Content-Disposition": "attachment; filename=RiskHistory.xlsx"
+                },
+            )
+
+        except Exception as e:
+            return {"error": str(e)}
+
+    # =========================
+    # Save Query to Database
+    # =========================
     try:
-        conn = get_mssql_conn()
+        db_url = os.getenv("DATABASE_URL")
+        if not db_url:
+            print("DATABASE_URL not set")
+            return result
 
-        query = """
-        SELECT
-            l.Street,
-            l.City,
-            l.County,
-            l.State,
-            l.ZipCode,
-            l.Latitude,
-            l.Longitude,
-            q.BuildingValue,
-            q.ContentsValue,
-            q.BusinessInterruptionValue,
-            q.YearBuilt,
-            q.NumStories,
-            q.Sqft,
-            l.OverallScore,
-            l.Score100yr,
-            l.Score250yr,
-            l.Score500yr,
-            l.BuildingALR,
-            l.ContentsALR,
-            l.BusinessInterruptionALR,
-            q.BuildingAAL,
-            q.ContentsAAL,
-            q.BusinessInterruptionAAL,
-            l.GroundUpLoss
-        FROM dbo.Moodys_Query_History q
-        INNER JOIN dbo.Moodys_Location_Risk l
-            ON q.LocationRiskId = l.LocationRiskId
-        ORDER BY q.QueriedAt DESC;
-        """
+        conn = psycopg2.connect(db_url)
+        cur = conn.cursor()
 
-        df = pd.read_sql(query, conn)
+        overall_score = risk_res.get("scoreOverall")
+        score_100 = risk_res.get("score100yr")
+        score_250 = risk_res.get("score250yr")
+        score_500 = risk_res.get("score500yr")
+
+        street = geo_res.get("streetAddress")
+        city = geo_res.get("cityName")
+        state = geo_res.get("admin1Code")
+        county = geo_res.get("admin2Name")
+        zip_code = geo_res.get("postalCode")
+
+        building_value = req.building_value or 0
+        contents_value = req.contents_value or 0
+        bi_value = req.business_interruption_value or 0
+
+        ratio_map = {
+            1:(0,0.5),2:(0.5,1),3:(1,5),4:(5,10),
+            5:(10,15),6:(15,20),7:(20,30),
+            8:(30,40),9:(40,50),10:(50,75)
+        }
+
+        def calc_expected(score):
+            upper = ratio_map.get(score, (0,0))[1] / 100
+            return building_value * upper
+
+        expected_100 = calc_expected(score_100)
+        expected_250 = calc_expected(score_250)
+        expected_500 = calc_expected(score_500)
+
+        building_alr = loss_res.get("buildingAlr") or 0
+        contents_alr = loss_res.get("contentsAlr") or 0
+        bi_alr = loss_res.get("businessInterruptionAlr") or 0
+
+        annual_building_loss = building_alr * building_value
+        annual_contents_loss = contents_alr * contents_value
+        annual_bi_loss = bi_alr * bi_value
+
+        average_annual_loss = loss_res.get("groundUpLoss") or 0
+
+        cur.execute("""
+            INSERT INTO RiskQueries (
+                Timestamp,
+                Street,
+                City,
+                County,
+                State,
+                ZipCode,
+                BuildingValue,
+                ContentsValue,
+                BusinessInterruptionValue,
+                BuildingAAL,
+                ContentsAAL,
+                BusinessInterruptionAAL,
+                TotalAAL,
+                OverallScore,
+                Year100Score,
+                Year250Score,
+                Year500Score,
+                Year100ExpectedLoss,
+                Year250ExpectedLoss,
+                Year500ExpectedLoss
+            )
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+        """, (
+            datetime.now(),
+            street,
+            city,
+            county,
+            state,
+            zip_code,
+            building_value,
+            contents_value,
+            bi_value,
+            annual_building_loss,
+            annual_contents_loss,
+            annual_bi_loss,
+            average_annual_loss,
+            overall_score,
+            score_100,
+            score_250,
+            score_500,
+            expected_100,
+            expected_250,
+            expected_500
+        ))
+
+        conn.commit()
+        cur.close()
         conn.close()
 
-        output = io.BytesIO()
-        with pd.ExcelWriter(output, engine="openpyxl") as writer:
-            df.to_excel(writer, index=False, sheet_name="Location Risk")
-
-
-        output.seek(0)
-
-        filename = f"Moodys_Risk_Export_{datetime.now().strftime('%Y%m%d')}.xlsx"
-
-        return StreamingResponse(
-            output,
-            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            headers={
-                "Content-Disposition": f"attachment; filename={filename}"
-            },
-        )
-
     except Exception as e:
-        return {"error": str(e)}
+        print("Database write error:", e)
+
+    return result
