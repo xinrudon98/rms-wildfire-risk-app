@@ -1,0 +1,8 @@
+fastapi
+uvicorn[standard]
+requests
+pydantic
+pandas
+openpyxl
+pyodbc
+python-dotenv
