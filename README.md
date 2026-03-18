@@ -1,13 +1,27 @@
 # RMS Wildfire Risk Analytics Platform
 
+An end-to-end wildfire risk analytics platform that integrates Moody’s RMS API with a SQL-based caching system to support underwriting and loss modeling workflows.
+
 ## Architecture
 
 ![Architecture](architecture.png)
+
+---
 
 ## Overview
 This project is an end-to-end wildfire risk analytics platform that integrates Moody’s RMS API into an underwriting workflow.
 
 It allows users to query property-level wildfire risk, automatically cache results into a SQL database, and generate analytics such as Average Annual Loss (AAL) and PML-based insights.
+
+---
+
+## Application Demo
+
+### Frontend Risk Lookup Interface
+![Frontend](frontend.png)
+
+### Risk Map & Analytics (PML / Loss Ratio)
+![Map](map.png)
 
 ---
 
@@ -58,15 +72,18 @@ This project was built to:
 
 ---
 
-## Architecture
+## Architecture Flow
 
-Frontend UI  
+User  
+↓  
+Local App (.exe)  
+↓  
+Frontend UI (HTML / JS)  
 ↓  
 FastAPI Backend  
-↓  
-Moody’s RMS API  
-↓  
-SQL Server (Cache + Query History)  
+↓                ↘  
+SQL Server        RMS API  
+(Cache + History)  
 ↓  
 Analytics / Mapping  
 
@@ -84,6 +101,8 @@ rms-wildfire-risk-app/
 │   └── gross_pml_map.ipynb
 ├── tests/
 │   └── initial_test.py
+├── archive/
+│   └── old_main.py
 ├── requirements.txt
 ├── .env.example
 └── README.md
