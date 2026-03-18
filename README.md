@@ -1,5 +1,9 @@
 # RMS Wildfire Risk Analytics Platform
 
+## Architecture
+
+![Architecture](architecture.png)
+
 ## Overview
 This project is an end-to-end wildfire risk analytics platform that integrates Moody’s RMS API into an underwriting workflow.
 
