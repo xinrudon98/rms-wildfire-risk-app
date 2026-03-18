@@ -81,9 +81,14 @@ Local App (.exe)
 Frontend UI (HTML / JS)  
 ↓  
 FastAPI Backend  
-↓                ↘  
-SQL Server        RMS API  
-(Cache + History)  
+↓  
+Check SQL Server Cache  
+├── Cache Hit → Return Result  
+└── Cache Miss → Call RMS API  
+                      ↓  
+               Store in SQL Server  
+                      ↓  
+               Return Result  
 ↓  
 Analytics / Mapping  
 
@@ -143,6 +148,10 @@ uvicorn app.main:app --reload
 
 ---
 
+## Future Improvements
+- Cloud deployment
+- Add authentication
+- Portfolio-level risk dashboard
 ## Future Improvements
 - Cloud deployment
 - Add authentication
