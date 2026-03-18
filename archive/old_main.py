@@ -1,3 +1,25 @@
+"""
+Archived Version - Early RMS Wildfire App Prototype
+
+This version represents the initial cloud-based implementation of the application.
+
+Key characteristics:
+- Deployed on Render with an external database (PostgreSQL / Supabase-style)
+- Designed as a lightweight prototype for direct API querying
+- Each request triggers a new RMS API call (no caching layer)
+- Stores results as query-level records for analysis
+- Includes additional building attributes (year built, stories, square footage)
+
+Compared with the current version (main.py):
+- The current system runs in an internal environment (can be packaged as an executable)
+- Uses company SQL Server instead of external cloud database
+- Introduces normalized address caching to eliminate redundant API calls
+- Separates location-level risk data from query-history records
+- Optimized for underwriting workflow and repeated usage
+
+This file is preserved to demonstrate system evolution from prototype to production.
+"""
+
 import os
 import requests
 from typing import Optional
